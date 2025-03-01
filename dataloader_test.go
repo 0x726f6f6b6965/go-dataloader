@@ -3,6 +3,7 @@ package dataloader_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -150,7 +151,6 @@ func (suite *LoaderTestSuite) TestLoadOrExec() {
 	for _, tc := range testCases {
 		suite.Run(tc.name, func() {
 			suite.T().Parallel()
-			start := time.Now()
 			batcher := dataloader.NewDataLoader(tc.execFunc, tc.options...)
 			_, expectedErr := tc.execFunc(context.Background(), tc.input)
 			actual := make(map[int]func() dataloader.Result[string])
@@ -167,7 +167,6 @@ func (suite *LoaderTestSuite) TestLoadOrExec() {
 					suite.Equal(tc.expected[key], val.Val)
 				}
 			}
-			fmt.Printf("Time taken case(%s): %v\n", tc.name, time.Since(start))
 		})
 	}
 }
@@ -196,4 +195,49 @@ func (suite *LoaderTestSuite) TestLoadOrExecPanic() {
 	loader := dataloader.NewDataLoader(execFn)
 	result := loader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: 1})
 	suite.ErrorContains(result().Err, dataloader.ErrPanicBatch.Error())
+}
+
+func (suite *LoaderTestSuite) TestConcurrency() {
+	total := 1000
+	result := make(chan func() dataloader.Result[string], total)
+	execFn := func(ctx context.Context, data []dataloader.Item[int, string]) (map[int]string, map[int]error) {
+		res := make(map[int]string)
+		errs := make(map[int]error)
+		for _, d := range data {
+			res[d.Key] = d.Val + "_processed"
+			errs[d.Key] = nil
+		}
+		return res, errs
+	}
+	inputs := make([]dataloader.Item[int, string], 0, total)
+	for i := range total {
+		inputs = append(inputs, dataloader.Item[int, string]{Key: i, Val: fmt.Sprintf("%d", i)})
+	}
+	resp, _ := execFn(context.Background(), inputs)
+	expected := make(map[string]struct{})
+	for _, v := range resp {
+		expected[v] = struct{}{}
+	}
+
+	loader := dataloader.NewDataLoader(execFn)
+	var wg sync.WaitGroup
+	for _, input := range inputs {
+		wg.Add(1)
+		go func(input dataloader.Item[int, string]) {
+			defer wg.Done()
+			result <- loader.LoadOrExec(context.Background(), input)
+		}(input)
+	}
+	wg.Wait()
+	close(result)
+
+	for item := range result {
+		val := item()
+		suite.NoError(val.Err)
+		if _, ok := expected[val.Val]; !ok {
+			suite.Fail("unexpected value")
+		}
+		delete(expected, val.Val)
+	}
+	suite.Empty(expected)
 }
