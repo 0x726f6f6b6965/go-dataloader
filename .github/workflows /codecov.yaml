@@ -1,0 +1,24 @@
+name: CodeCov Upload
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  ACCESS_TOKEN: ${{ secrets.ACTION_TOKEN }}
+jobs:
+  cover:
+    name: Coverrage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+      - run: go test -v -coverprofile=profile.cov ./...
+
+      - uses: codecov/codecov-action@v3
+        with:
+          files: ./profile.cov
+          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
