@@ -19,6 +19,7 @@ type LoaderInterface[KeyT comparable, ValT any] interface {
 
 var _ LoaderInterface[any, any] = &Loader[any, any]{}
 
+// NewDataLoader creates a new instance of Loader
 func NewDataLoader[KeyT comparable, ValT any](
 	execFn ExecFunc[KeyT, ValT], option ...Option[KeyT, ValT]) *Loader[KeyT, ValT] {
 	loader := &Loader[KeyT, ValT]{
