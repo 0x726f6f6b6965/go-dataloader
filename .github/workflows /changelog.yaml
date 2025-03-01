@@ -1,0 +1,16 @@
+name: "Enforce CHANGELOG.md Update"
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  # Enforces the update of a changelog file on every PR
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: dangoslen/changelog-enforcer@v3
+        with:
+          changeLogPath: "CHANGELOG.md"
+          missingUpdateErrorMessage: "A CHANGELOG.md update is required for pull requests"
