@@ -15,3 +15,7 @@ This dataloader implementation efficiently loads data in batches, reducing the n
 - Caching results
 - Customizable options
 - Built-in tracing for observability
+
+## Cache
+
+The default cache is not functional. You can implement your own cache, but it must be thread-safe, like [golang-lru](https://github.com/hashicorp/golang-lru), otherwise, it will panic.
