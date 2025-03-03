@@ -6,12 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Initialized DataLoader.
-- Added concurrency test.
+- TBD
 
 ### Changed
 
-- Modified action
+- TBD
 
 ### Deprecated
 
@@ -28,3 +27,14 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - TBD
+
+## [v0.0.2]
+
+### Added
+
+- Initialized DataLoader.
+- Added concurrency test.
+
+### Changed
+
+- Modified action.

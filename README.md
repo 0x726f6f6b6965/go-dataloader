@@ -16,6 +16,12 @@ This dataloader implementation efficiently loads data in batches, reducing the n
 - Customizable options
 - Built-in tracing for observability
 
+### How does dataloader work
+
+DataLoader operates by grouping multiple requests within a short time window into a single request to resolve the N+1 problem.
+
+![pic](./pic/dataloader.excalidraw.png)
+
 ## Cache
 
 The default cache is not functional. You can implement your own cache, but it must be thread-safe, like [golang-lru](https://github.com/hashicorp/golang-lru), otherwise, it will panic.
