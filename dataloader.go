@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -47,12 +48,13 @@ func (l *Loader[KeyT, ValT]) LoadOrExec(ctx context.Context,
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.batcher == nil {
+	l.once.Do(func() {
 		l.initBatcher(ctx)
 		batcher := l.batcher
+		batcher.Add(1)
 		go l.doBatch(batcher)
 		go l.triggerBatch(batcher)
-	}
+	})
 	batcher := l.batcher
 	// add item to batch
 	l.diff++
@@ -65,7 +67,7 @@ func (l *Loader[KeyT, ValT]) LoadOrExec(ctx context.Context,
 		l.resetBatch(batcher)
 	}
 	result := func() Result[ValT] {
-		<-batcher.done
+		batcher.Wait()
 		err, ok := batcher.errs[key.Key]
 		if ok && err != nil {
 			return Result[ValT]{Err: err}
@@ -109,7 +111,6 @@ func (l *Loader[KeyT, ValT]) initBatcher(ctx context.Context) {
 		input:  make(chan Item[KeyT, ValT], l.maxBatch),
 		output: make(map[KeyT]ValT),
 		errs:   make(map[KeyT]error),
-		done:   make(chan struct{}),
 	}
 	l.batcher = batch
 	l.full = make(chan struct{})
@@ -141,7 +142,7 @@ func (l *Loader[KeyT, ValT]) doBatch(batcher *batchItem[KeyT, ValT]) {
 		}
 	}
 	// batch done
-	close(batcher.done)
+	batcher.Done()
 }
 
 func (l *Loader[KeyT, ValT]) triggerBatch(batcher *batchItem[KeyT, ValT]) {
@@ -164,6 +165,7 @@ func (l *Loader[KeyT, ValT]) resetBatch(batcher *batchItem[KeyT, ValT]) {
 	if l.batcher == batcher {
 		// reset batcher
 		l.batcher = nil
+		l.once = sync.Once{}
 		l.diff = 0
 		l.full = nil
 	}

@@ -35,6 +35,8 @@ type ExecFunc[KeyT comparable, ValT any] func(
 type Loader[KeyT comparable, ValT any] struct {
 	*Options[KeyT, ValT]
 
+	once sync.Once
+
 	mu sync.Mutex
 
 	do ExecFunc[KeyT, ValT]
@@ -50,10 +52,10 @@ type Loader[KeyT comparable, ValT any] struct {
 // the output map, the errors map, the done channel, and a boolean to
 // check if the batcher is a trigger.
 type batchItem[KeyT comparable, ValT any] struct {
+	sync.WaitGroup
 	ctx       context.Context
 	input     chan Item[KeyT, ValT]
 	output    map[KeyT]ValT
 	errs      map[KeyT]error
 	isTrigger bool
-	done      chan struct{}
 }
