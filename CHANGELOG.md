@@ -6,11 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- TBD
+- Added bazel
 
 ### Changed
 
-- TBD
+- Using sync once and wait group
 
 ### Deprecated
 
