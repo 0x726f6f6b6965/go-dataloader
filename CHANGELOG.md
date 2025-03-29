@@ -6,11 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Added bazel
+- TBD
 
 ### Changed
 
-- Using sync once and wait group
+- TBD
 
 ### Deprecated
 
@@ -27,6 +27,16 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - TBD
+
+## [v0.0.3]
+
+### Added
+
+- Added bazel
+
+### Changed
+
+- Using sync once and wait group
 
 ## [v0.0.2]
 
