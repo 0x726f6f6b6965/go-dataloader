@@ -28,6 +28,16 @@ All notable changes to this project will be documented in this file.
 
 - TBD
 
+## [v0.0.3]
+
+### Added
+
+- Added bazel
+
+### Changed
+
+- Using sync once and wait group
+
 ## [v0.0.2]
 
 ### Added

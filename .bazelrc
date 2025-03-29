@@ -1,0 +1,4 @@
+# Enable Bzlmod for every Bazel command
+common --enable_bzlmod
+# Disable workspace for every Bazel command
+common --noenable_workspace
