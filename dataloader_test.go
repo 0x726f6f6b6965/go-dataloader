@@ -550,3 +550,178 @@ func (c *MockSimpleCache[KeyT, ValT]) Purge() {
 	defer c.mu.Unlock()
 	c.Store = make(map[KeyT]ValT)
 }
+
+// --- Benchmark Tests ---
+
+var blackhole string // Prevents compiler optimizing away results
+
+// Simple execFn for benchmarks
+func benchmarkExecFn(ctx context.Context, data []dataloader.Item[int, string]) (map[int]string, map[int]error) {
+	res := make(map[int]string, len(data))
+	for _, d := range data {
+		// Simulate some minimal work, e.g., string manipulation
+		res[d.Key] = fmt.Sprintf("val_%d_processed_at_%d", d.Key, time.Now().UnixNano())
+	}
+	// Simulate a small delay per batch
+	// time.Sleep(1 * time.Millisecond) // Uncomment to simulate more realistic batch work
+	return res, nil
+}
+
+func BenchmarkLoadOrExec_Simple_NoCache(b *testing.B) {
+	loader := dataloader.NewDataLoader(benchmarkExecFn,
+		dataloader.WithMaxBatch[int, string](10),
+		dataloader.WithWait[int, string](5*time.Millisecond),
+		dataloader.WithCache[int, string](dataloader.DefaultCache[int, string]{}), // Explicitly no-op cache
+	)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		thunk := loader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: i, Val: fmt.Sprintf("val_%d", i)})
+		result := thunk()
+		if result.Err != nil {
+			b.Fatalf("Unexpected error: %v", result.Err)
+		}
+		blackhole = result.Val // Use the result
+	}
+}
+
+func BenchmarkLoadOrExec_Simple_WithCacheHits(b *testing.B) {
+	// Pre-populate cache for subsequent hits
+	cache := &MockSimpleCache[int, string]{Store: make(map[int]string)}
+	preFillLoader := dataloader.NewDataLoader(benchmarkExecFn,
+		dataloader.WithMaxBatch[int, string](100), // Larger batch for pre-fill
+		dataloader.WithWait[int, string](1*time.Millisecond),
+		dataloader.WithCache[int, string](cache),
+	)
+
+	// Pre-fill items that will be commonly accessed
+	numPreFillItems := 1000 // Number of items to pre-fill and then hit in benchmark
+	var preFillThunks []func() dataloader.Result[string]
+	for i := 0; i < numPreFillItems; i++ {
+		thunk := preFillLoader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: i, Val: fmt.Sprintf("val_%d", i)})
+		preFillThunks = append(preFillThunks, thunk)
+	}
+	for _, thunk := range preFillThunks {
+		res := thunk()
+		if res.Err != nil {
+			b.Fatalf("Pre-fill error: %v", res.Err)
+		}
+	}
+	b.Logf("Cache pre-filled with %d items. Store size: %d", numPreFillItems, len(cache.Store))
+
+
+	// Loader for benchmark, using the pre-filled cache
+	loader := dataloader.NewDataLoader(benchmarkExecFn, // This execFn should ideally not be called much
+		dataloader.WithMaxBatch[int, string](10),
+		dataloader.WithWait[int, string](5*time.Millisecond),
+		dataloader.WithCache[int, string](cache),
+	)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Access items that should be in cache
+		key := i % numPreFillItems // Cycle through pre-filled keys
+		thunk := loader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: key, Val: fmt.Sprintf("val_%d", key)})
+		result := thunk()
+		if result.Err != nil {
+			b.Fatalf("Unexpected error: %v", result.Err)
+		}
+		blackhole = result.Val
+	}
+}
+
+func BenchmarkLoadOrExec_Concurrent_NoCache(b *testing.B) {
+	loader := dataloader.NewDataLoader(benchmarkExecFn,
+		dataloader.WithMaxBatch[int, string](50), // Larger batch size for concurrency
+		dataloader.WithWait[int, string](10*time.Millisecond),
+		dataloader.WithCache[int, string](dataloader.DefaultCache[int, string]{}),
+	)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		var counter int
+		for pb.Next() {
+			key := counter // Each goroutine will have its own sequence of keys
+			thunk := loader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: key, Val: fmt.Sprintf("val_%d", key)})
+			result := thunk()
+			if result.Err != nil {
+				b.Errorf("Unexpected error: %v", result.Err) // Use Errorf in parallel benchmarks
+			}
+			blackhole = result.Val
+			counter++
+		}
+	})
+}
+
+func BenchmarkLoadOrExec_Concurrent_WithCacheHits(b *testing.B) {
+	cache := &MockSimpleCache[int, string]{Store: make(map[int]string)}
+	numPreFillItems := 2000 // More items for concurrent access
+	preFillLoader := dataloader.NewDataLoader(benchmarkExecFn,
+		dataloader.WithMaxBatch[int, string](200),
+		dataloader.WithWait[int, string](1*time.Millisecond),
+		dataloader.WithCache[int, string](cache),
+	)
+	var preFillThunks []func() dataloader.Result[string]
+	for i := 0; i < numPreFillItems; i++ {
+		thunk := preFillLoader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: i, Val: fmt.Sprintf("val_%d", i)})
+		preFillThunks = append(preFillThunks, thunk)
+	}
+	for _, thunk := range preFillThunks {
+		if res := thunk(); res.Err != nil {
+			b.Fatalf("Pre-fill error: %v", res.Err)
+		}
+	}
+	b.Logf("Concurrent CacheHits: Cache pre-filled with %d items. Store size: %d", numPreFillItems, len(cache.Store))
+
+
+	loader := dataloader.NewDataLoader(benchmarkExecFn,
+		dataloader.WithMaxBatch[int, string](50),
+		dataloader.WithWait[int, string](10*time.Millisecond),
+		dataloader.WithCache[int, string](cache),
+	)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		var counter int // Counter for unique keys per goroutine
+		for pb.Next() {
+			// Each goroutine accesses a rotating set of keys to ensure high cache hit rate
+			// but also some distribution to avoid all hitting key 0.
+			key := (counter + int(time.Now().UnixNano())) % numPreFillItems
+			thunk := loader.LoadOrExec(context.Background(), dataloader.Item[int, string]{Key: key, Val: fmt.Sprintf("val_%d", key)})
+			result := thunk()
+			if result.Err != nil {
+				b.Errorf("Unexpected error: %v", result.Err)
+			}
+			blackhole = result.Val
+			counter++
+		}
+	})
+}
+
+
+func BenchmarkLoadOrExec_FullBatches_NoCache(b *testing.B) {
+	maxBatch := 100
+	loader := dataloader.NewDataLoader(benchmarkExecFn,
+		dataloader.WithMaxBatch[int, string](maxBatch),
+		dataloader.WithWait[int, string](200*time.Millisecond), // Long wait to ensure batching by size
+		dataloader.WithCache[int, string](dataloader.DefaultCache[int, string]{}),
+	)
+
+	items := make([]dataloader.Item[int, string], b.N)
+	for i := 0; i < b.N; i++ {
+		items[i] = dataloader.Item[int, string]{Key: i, Val: fmt.Sprintf("val_%d", i)}
+	}
+
+	b.ResetTimer()
+	// Load all items first, then resolve. This pattern is common.
+	thunks := make([]func() dataloader.Result[string], b.N)
+	for i := 0; i < b.N; i++ {
+		thunks[i] = loader.LoadOrExec(context.Background(), items[i])
+	}
+
+	for i := 0; i < b.N; i++ {
+		result := thunks[i]()
+		if result.Err != nil {
+			b.Fatalf("Unexpected error: %v", result.Err)
+		}
+		blackhole = result.Val
+	}
+}
