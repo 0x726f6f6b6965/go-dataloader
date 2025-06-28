@@ -27,6 +27,12 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - TBD
+- 
+## [v0.0.4]
+
+### Changed
+
+- Refactor DataLoader for improved readability and concurrency safety.
 
 ## [v0.0.3]
 
